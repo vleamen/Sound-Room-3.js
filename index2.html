@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sonic Monolith - Multi-Zone Interactive Matrix</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #2a2522; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+        
+        /* Initialization Overlay */
+        #overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 12, 10, 0.98); display: flex; flex-direction: column;
+            justify-content: center; align-items: center; color: #f0e6d2; z-index: 50;
+        }
+        h1 { font-weight: 300; letter-spacing: 6px; margin-bottom: 5px; text-transform: uppercase; }
+        h3 { font-weight: 400; color: #8a7d6d; letter-spacing: 2px; margin-bottom: 40px; font-size: 14px; }
+        button {
+            padding: 16px 40px; font-size: 13px; cursor: pointer;
+            background: #f0e6d2; color: #1a1a1a; border: none; border-radius: 2px;
+            text-transform: uppercase; letter-spacing: 3px; transition: 0.3s;
+        }
+        button:hover { background: #c2b59b; }
+
+        /* Navigation HUD */
+        #hud {
+            position: absolute; bottom: 30px; left: 30px; color: rgba(240, 230, 210, 0.5); z-index: 5;
+            font-size: 11px; letter-spacing: 2px; text-transform: uppercase; pointer-events: none;
+        }
+        .key { display: inline-block; padding: 4px 8px; border: 1px solid rgba(240, 230, 210, 0.3); border-radius: 3px; margin: 0 4px;}
+
+        /* Algorithmic Control Panel */
+        #controlPanel {
+            position: absolute; top: 20px; right: 20px; width: 320px;
+            background: rgba(20, 18, 16, 0.85); backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1); border-radius: 6px;
+            padding: 20px; color: #e0d8c8; z-index: 10; display: none;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        .panel-header { font-size: 10px; letter-spacing: 3px; color: #8a7d6d; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;}
+        #activeZoneLabel { font-size: 16px; font-weight: bold; margin-bottom: 15px; letter-spacing: 1px; color: #fff;}
+        
+        /* Live Visualizer Canvas */
+        #visualizerCanvas {
+            width: 100%; height: 80px; background: rgba(0,0,0,0.5); 
+            border-radius: 4px; margin-bottom: 20px;
+        }
+
+        /* Slider Controls */
+        .control-group { margin-bottom: 10px; }
+        .control-group label { display: block; font-size: 10px; letter-spacing: 1px; margin-bottom: 8px; color: #aaa; }
+        input[type=range] {
+            -webkit-appearance: none; width: 100%; background: transparent; 
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%;
+            background: #f0e6d2; cursor: pointer; margin-top: -6px;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 4px; cursor: pointer; background: #444; border-radius: 2px;
+        }
+        
+        #togglePanelBtn {
+            position: absolute; top: 20px; right: 20px; z-index: 20; padding: 10px 20px;
+            background: rgba(20, 18, 16, 0.8); border: 1px solid rgba(255,255,255,0.2);
+            color: white; font-size: 10px; letter-spacing: 2px; cursor: pointer; display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <audio id="audioAmbient" src="ambient.mp3" loop></audio>
+    <audio id="audioJazz" src="jazz.mp3" loop></audio>
+    <audio id="audioHipHop" src="hiphop.mp3" loop></audio>
+
+    <div id="overlay">
+        <h1>Comparative Spatial Matrix</h1>
+        <h3>ARCH 4500 | THE RESONANT CHAMBER | MULTI-ZONE ALGORITHMS</h3>
+        <button id="startButton">Initialize Architectural Execution</button>
+    </div>
+
+    <button id="togglePanelBtn">SYS. VISUALIZER</button>
+
+    <div id="controlPanel">
+        <div class="panel-header">REAL-TIME DSP ALGORITHM</div>
+        <div id="activeZoneLabel">ZONE: ISOLATED</div>
+        <canvas id="visualizerCanvas" width="280" height="80"></canvas>
+        <div class="control-group">
+            <label>PDLC & THERMAL SENSITIVITY MULTIPLIER</label>
+            <input type="range" id="sensitivitySlider" min="0.1" max="3.0" step="0.1" value="1.0">
+        </div>
+    </div>
+
+    <div id="hud">
+        NAVIGATION PROTOCOL: <span class="key">W</span> <span class="key">A</span> <span class="key">S</span> <span class="key">D</span> or <span class="key">ARROWS</span>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <script>
+        let scene, camera, renderer;
+        let rooms = [];
+        let activeRoomIndex = -1;
+        let audioContext;
+
+        // Movement State
+        const move = { forward: false, backward: false, left: false, right: false };
+        const speed = 0.15;
+
+        // UI Canvas Context
+        const canvas = document.getElementById('visualizerCanvas');
+        const canvasCtx = canvas.getContext('2d');
+
+        // ----------------------------------------------------
+        // UTILITY: TEXTURE GENERATORS
+        // ----------------------------------------------------
+        function createParticleTexture() {
+            const c = document.createElement('canvas');
+            c.width = 64; c.height = 64;
+            const ctx = c.getContext('2d');
+            const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+            grad.addColorStop(0, 'rgba(255,255,255,1)');
+            grad.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = grad; ctx.fillRect(0, 0, 64, 64);
+            return new THREE.CanvasTexture(c);
+        }
+
+        function createAcousticBumpMap() {
+            const c = document.createElement('canvas');
+            c.width = 256; c.height = 256;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 256, 256);
+            const cells = 8, size = 256 / cells;
+            for(let y=0; y<cells; y++) {
+                for(let x=0; x<cells; x++) {
+                    const cx = x * size + size/2, cy = y * size + size/2;
+                    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, size/1.5);
+                    grad.addColorStop(0, '#fff'); grad.addColorStop(1, '#000');
+                    ctx.fillStyle = grad; ctx.fillRect(x*size, y*size, size, size);
+                }
+            }
+            const tex = new THREE.CanvasTexture(c);
+            tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(8, 8); 
+            return tex;
+        }
+
+        const particleTex = createParticleTexture();
+        const acousticBumpTex = createAcousticBumpMap();
+
+        // Shared Furniture Materials (to save memory)
+        const teakMat = new THREE.MeshStandardMaterial({ color: 0x6e4325, roughness: 0.3 });
+        const frameMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.8, roughness: 0.2 });
+        const acousticMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9, bumpMap: acousticBumpTex, bumpScale: 0.15 });
+        const fabricMat = new THREE.MeshStandardMaterial({ color: 0xd4c5b0, roughness: 0.9 }); 
+        const chromeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1.0, roughness: 0.1 }); 
+
+        // ----------------------------------------------------
+        // CLASS: RESONANT CHAMBER (Object-Oriented Architecture)
+        // ----------------------------------------------------
+        class ResonantChamber {
+            constructor(xOffset, title, typeId, audioId) {
+                this.x = xOffset;
+                this.title = title;
+                this.typeId = typeId; // 0=Ambient, 1=Jazz, 2=HipHop
+                this.audioElement = document.getElementById(audioId);
+                this.sensitivity = 1.0;
+                
+                this.group = new THREE.Group();
+                this.group.position.x = this.x;
+
+                // State smoothing
+                this.sBass = 0;
+                this.sMid = 0;
+
+                this.buildArchitecture();
+                this.buildFurniture();
+                this.buildFire();
+            }
+
+            setupAudio(audioCtx) {
+                this.source = audioCtx.createMediaElementSource(this.audioElement);
+                this.analyser = audioCtx.createAnalyser();
+                this.analyser.fftSize = 512;
+                this.source.connect(this.analyser);
+                this.analyser.connect(audioCtx.destination);
+                this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+            }
+
+            buildArchitecture() {
+                // Floor
+                const floor = new THREE.Mesh(new THREE.PlaneGeometry(8, 8), teakMat);
+                floor.rotation.x = -Math.PI / 2; floor.position.y = 0.01;
+                this.group.add(floor);
+
+                // Frame
+                const colGeo = new THREE.BoxGeometry(0.2, 4, 0.2);
+                [[-4,2,-4], [4,2,-4], [-4,2,4], [4,2,4]].forEach(pos => {
+                    const col = new THREE.Mesh(colGeo, frameMat);
+                    col.position.set(...pos); this.group.add(col);
+                });
+                const beamX = new THREE.Mesh(new THREE.BoxGeometry(8.2, 0.2, 0.2), frameMat);
+                beamX.position.set(0, 4, -4); this.group.add(beamX.clone());
+                beamX.position.set(0, 4, 4); this.group.add(beamX);
+                const beamZ = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 8.2), frameMat);
+                beamZ.position.set(-4, 4, 0); this.group.add(beamZ.clone());
+                beamZ.position.set(4, 4, 0); this.group.add(beamZ);
+
+                // Ceiling
+                const ceil = new THREE.Mesh(new THREE.PlaneGeometry(7.8, 7.8), acousticMat);
+                ceil.rotation.x = Math.PI / 2; ceil.position.y = 3.9;
+                this.group.add(ceil);
+
+                // INDEPENDENT PDLC GLASS MATERIAL
+                this.glassMat = new THREE.MeshPhysicalMaterial({
+                    color: 0xffffff, metalness: 0.0, roughness: 0.05, 
+                    transmission: 1.0, transparent: true, thickness: 0.2, side: THREE.DoubleSide
+                });
+
+                const wX = new THREE.PlaneGeometry(7.8, 3.8), wZ = new THREE.PlaneGeometry(7.8, 3.8);
+                const n = new THREE.Mesh(wX, this.glassMat); n.position.set(0, 2.0, -3.9); this.group.add(n);
+                const s = new THREE.Mesh(wX, this.glassMat); s.position.set(0, 2.0, 3.9); this.group.add(s);
+                const e = new THREE.Mesh(wZ, this.glassMat); e.position.set(3.9, 2.0, 0); e.rotation.y = Math.PI/2; this.group.add(e);
+                const w = new THREE.Mesh(wZ, this.glassMat); w.position.set(-3.9, 2.0, 0); w.rotation.y = Math.PI/2; this.group.add(w);
+            }
+
+            buildFurniture() {
+                // Tacchini Sesann Sofa
+                const couchGroup = new THREE.Group();
+                const seat = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.35, 1.1), fabricMat);
+                seat.position.set(0, 0.25, 0); couchGroup.add(seat);
+                const back = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.45, 0.4), fabricMat);
+                back.position.set(0, 0.65, -0.35); couchGroup.add(back);
+                const armGeo = new THREE.BoxGeometry(0.35, 0.35, 1.0);
+                const armL = new THREE.Mesh(armGeo, fabricMat); armL.position.set(-1.0, 0.55, 0.05); couchGroup.add(armL);
+                const armR = new THREE.Mesh(armGeo, fabricMat); armR.position.set(1.0, 0.55, 0.05); couchGroup.add(armR);
+
+                const curve = new THREE.CatmullRomCurve3([
+                    new THREE.Vector3(-1.2, 0.42, -0.6), new THREE.Vector3(1.2, 0.42, -0.6),
+                    new THREE.Vector3(1.25, 0.42, 0.0), new THREE.Vector3(1.2, 0.42, 0.6),
+                    new THREE.Vector3(-1.2, 0.42, 0.6), new THREE.Vector3(-1.25, 0.42, 0.0)
+                ], true);
+                couchGroup.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 64, 0.04, 16, true), chromeMat));
+                couchGroup.position.set(0, 0, 2.0); couchGroup.rotation.y = Math.PI; 
+                this.group.add(couchGroup);
+            }
+
+            buildFire() {
+                const pit = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 0.15, 32), new THREE.MeshStandardMaterial({ color: 0xd9d7d2, roughness: 0.8 }));
+                pit.position.set(0, 0.075, -0.5); this.group.add(pit);
+
+                this.fireLight = new THREE.PointLight(0xff7722, 1.0, 6); 
+                this.fireLight.position.set(0, 0.3, -0.5); this.group.add(this.fireLight);
+
+                this.fireCount = 300; 
+                this.fireGeo = new THREE.BufferGeometry();
+                const fPos = new Float32Array(this.fireCount * 3), fVel = new Float32Array(this.fireCount * 3);
+                for(let i=0; i<this.fireCount; i++) {
+                    fPos[i*3] = (Math.random()-0.5)*0.6; fPos[i*3+1] = Math.random()*0.8; fPos[i*3+2] = -0.5+(Math.random()-0.5)*0.6;
+                    fVel[i*3] = (Math.random()-0.5)*0.01; fVel[i*3+1] = 0.01+Math.random()*0.015; fVel[i*3+2] = (Math.random()-0.5)*0.01;
+                }
+                this.fireGeo.setAttribute('position', new THREE.BufferAttribute(fPos, 3));
+                this.fireGeo.setAttribute('velocity', new THREE.BufferAttribute(fVel, 3));
+
+                this.fireMat = new THREE.PointsMaterial({
+                    color: 0xff9900, size: 0.2, transparent: true, opacity: 0.6, 
+                    map: particleTex, depthWrite: false, blending: THREE.AdditiveBlending
+                });
+                this.group.add(new THREE.Points(this.fireGeo, this.fireMat));
+            }
+
+            // ALGORITHMIC LOGIC - Differentiated by Type
+            update() {
+                if(!this.analyser) return;
+                this.analyser.getByteFrequencyData(this.dataArray);
+                
+                let bSum = 0; for(let i=0; i<8; i++) bSum += this.dataArray[i];
+                let rawBass = (bSum / 8) / 255;
+
+                let mSum = 0; for(let i=10; i<100; i++) mSum += this.dataArray[i];
+                let rawMid = Math.min(1.0, (mSum / 90) / 80); 
+
+                let targetBass = 0, targetMid = 0, lerpSpeed = 0.1;
+
+                // ALGORITHM 1: AMBIENT (Slow, Ethereal, Low-pass focus)
+                if (this.typeId === 0) {
+                    targetBass = rawBass * this.sensitivity * 0.8;
+                    targetMid = rawMid * this.sensitivity * 1.5;
+                    lerpSpeed = 0.03; // Extremely slow, breathing lerp
+                    
+                    this.sBass += (targetBass - this.sBass) * lerpSpeed;
+                    this.sMid += (targetMid - this.sMid) * lerpSpeed;
+                    
+                    this.glassMat.roughness = 0.05 + (this.sMid * 0.7); 
+                    this.glassMat.transmission = 1.0 - (this.sMid * 0.5); 
+                    
+                    this.fireLight.intensity = 1.0 + (this.sBass * 3);
+                    this.updateFirePhysics(this.sBass * 1.5, 0.6 + this.sBass, 0.5);
+                }
+                
+                // ALGORITHM 2: JAZZ (Mid-range sensitive, organic flutter)
+                else if (this.typeId === 1) {
+                    targetBass = rawBass * this.sensitivity;
+                    targetMid = rawMid * this.sensitivity * 1.2;
+                    lerpSpeed = 0.15; // Natural flutter
+                    
+                    this.sBass += (targetBass - this.sBass) * lerpSpeed;
+                    this.sMid += (targetMid - this.sMid) * lerpSpeed;
+                    
+                    this.glassMat.roughness = 0.05 + (this.sMid * 0.95); 
+                    this.glassMat.transmission = 1.0 - (this.sMid * 0.95); 
+                    
+                    this.fireLight.intensity = 1.0 + (this.sBass * 8);
+                    this.updateFirePhysics(this.sBass * 4.0, 1.0 + this.sBass * 1.5, 1.5);
+                }
+
+                // ALGORITHM 3: HIP HOP (High contrast, aggressive gating)
+                else if (this.typeId === 2) {
+                    // Gate threshold logic
+                    targetBass = rawBass > 0.6 ? rawBass * this.sensitivity : 0;
+                    targetMid = rawMid > 0.4 ? rawMid * this.sensitivity * 1.5 : 0;
+                    lerpSpeed = 0.4; // Aggressively fast snap
+                    
+                    this.sBass += (targetBass - this.sBass) * lerpSpeed;
+                    this.sMid += (targetMid - this.sMid) * lerpSpeed;
+                    
+                    // Total blackout on snare/mid hits
+                    this.glassMat.roughness = 0.05 + (this.sMid); 
+                    this.glassMat.transmission = 1.0 - (this.sMid * 1.2); 
+                    
+                    this.fireLight.intensity = 0.5 + (this.sBass * 20); // Massive flare
+                    this.updateFirePhysics(this.sBass * 12.0, 1.5 + this.sBass * 3.0, 3.0);
+                }
+            }
+
+            updateFirePhysics(upSpeed, maxHeight, spread) {
+                this.fireMat.size = 0.15 + (this.sBass * 0.4);
+                const pos = this.fireGeo.attributes.position;
+                const vel = this.fireGeo.attributes.velocity;
+                for(let i=0; i<this.fireCount; i++) {
+                    pos.setY(i, pos.getY(i) + vel.getY(i) * (1 + upSpeed));
+                    pos.setX(i, pos.getX(i) + vel.getX(i) * (1 + spread));
+                    pos.setZ(i, pos.getZ(i) + vel.getZ(i) * (1 + spread));
+                    if(pos.getY(i) > maxHeight) {
+                        pos.setY(i, 0);
+                        pos.setX(i, (Math.random()-0.5)*0.6);
+                        pos.setZ(i, -0.5+(Math.random()-0.5)*0.6);
+                    }
+                }
+                pos.needsUpdate = true;
+            }
+        }
+
+        // ----------------------------------------------------
+        // SYSTEM INITIALIZATION
+        // ----------------------------------------------------
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x2a2522); // Darker matrix background
+            scene.fog = new THREE.FogExp2(0x2a2522, 0.02);
+
+            camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 1.6, 15); // Start outside, looking at center room
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.physicallyCorrectLights = true; 
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            document.body.appendChild(renderer.domElement);
+
+            const ambientLight = new THREE.AmbientLight(0xffeacc, 0.3);
+            scene.add(ambientLight);
+            const sunLight = new THREE.DirectionalLight(0xff9944, 1.5);
+            sunLight.position.set(-10, 10, -10);
+            scene.add(sunLight);
+
+            // Ground Plane
+            const ground = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), new THREE.MeshStandardMaterial({color: 0x111111, roughness: 1.0}));
+            ground.rotation.x = -Math.PI / 2;
+            scene.add(ground);
+
+            // Instantiate the 3 Architectural Zones
+            rooms.push(new ResonantChamber(-18, "AMBIENT PROTOCOL", 0, "audioAmbient"));
+            rooms.push(new ResonantChamber(0, "JAZZ PROTOCOL", 1, "audioJazz"));
+            rooms.push(new ResonantChamber(18, "HIP HOP PROTOCOL", 2, "audioHipHop"));
+            
+            rooms.forEach(r => scene.add(r.group));
+
+            window.addEventListener('resize', onWindowResize, false);
+            setupInput();
+        }
+
+        function setupInput() {
+            const onKeyDown = function (event) {
+                switch (event.code) {
+                    case 'ArrowUp': case 'KeyW': move.forward = true; break;
+                    case 'ArrowLeft': case 'KeyA': move.left = true; break;
+                    case 'ArrowDown': case 'KeyS': move.backward = true; break;
+                    case 'ArrowRight': case 'KeyD': move.right = true; break;
+                }
+            };
+            const onKeyUp = function (event) {
+                switch (event.code) {
+                    case 'ArrowUp': case 'KeyW': move.forward = false; break;
+                    case 'ArrowLeft': case 'KeyA': move.left = false; break;
+                    case 'ArrowDown': case 'KeyS': move.backward = false; break;
+                    case 'ArrowRight': case 'KeyD': move.right = false; break;
+                }
+            };
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+            
+            // UI Interactions
+            document.getElementById('togglePanelBtn').addEventListener('click', () => {
+                const panel = document.getElementById('controlPanel');
+                panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+            });
+            
+            document.getElementById('sensitivitySlider').addEventListener('input', (e) => {
+                if(activeRoomIndex !== -1) {
+                    rooms[activeRoomIndex].sensitivity = parseFloat(e.target.value);
+                }
+            });
+        }
+
+        async function initAudio() {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            rooms.forEach(r => r.setupAudio(audioContext));
+        }
+
+        // ----------------------------------------------------
+        // CORE RENDER & LOGIC LOOP
+        // ----------------------------------------------------
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // 1. First-Person Camera Movement
+            if (move.forward) camera.translateZ(-speed);
+            if (move.backward) camera.translateZ(speed);
+            if (move.left) camera.translateX(-speed);
+            if (move.right) camera.translateX(speed);
+            camera.position.y = 1.6; // Lock to eye-height
+
+            // 2. Spatial Audio Crossfading & Active Zone Detection
+            let closestDist = Infinity;
+            let closestIdx = -1;
+
+            rooms.forEach((room, idx) => {
+                // Calculate distance to room center
+                let dist = Math.sqrt(Math.pow(camera.position.x - room.x, 2) + Math.pow(camera.position.z, 2));
+                
+                // Crossfade Logic (Volume drops to 0 at 15 units away)
+                let vol = Math.max(0, 1.0 - (dist / 15.0));
+                room.audioElement.volume = vol;
+
+                if (dist < closestDist) {
+                    closestDist = dist;
+                    closestIdx = idx;
+                }
+                
+                // Run architectural logic
+                room.update();
+            });
+
+            // 3. UI Update Logic
+            if (closestDist < 8 && closestIdx !== activeRoomIndex) {
+                activeRoomIndex = closestIdx;
+                document.getElementById('activeZoneLabel').innerText = rooms[activeRoomIndex].title;
+                document.getElementById('sensitivitySlider').value = rooms[activeRoomIndex].sensitivity;
+            } else if (closestDist >= 8 && activeRoomIndex !== -1) {
+                activeRoomIndex = -1;
+                document.getElementById('activeZoneLabel').innerText = "ZONE: ISOLATED";
+            }
+
+            drawVisualizer();
+            renderer.render(scene, camera);
+        }
+
+        function drawVisualizer() {
+            if (document.getElementById('controlPanel').style.display !== 'block') return;
+            
+            canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+            if (activeRoomIndex === -1) return;
+
+            const room = rooms[activeRoomIndex];
+            if (!room.dataArray) return;
+
+            const bufferLength = room.analyser.frequencyBinCount;
+            const barWidth = (canvas.width / 50) * 2.5;
+            let barHeight;
+            let x = 0;
+
+            for (let i = 0; i < 50; i++) {
+                barHeight = room.dataArray[i] / 3;
+                canvasCtx.fillStyle = '#f0e6d2';
+                canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+                x += barWidth + 1;
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        document.getElementById('startButton').addEventListener('click', () => {
+            document.getElementById('overlay').style.display = 'none';
+            document.getElementById('togglePanelBtn').style.display = 'block';
+            init();
+            initAudio();
+            animate();
+            rooms.forEach(r => r.audioElement.play().catch(e=>console.log("Waiting for user interaction...")));
+        });
+    </script>
+</body>
+</html>

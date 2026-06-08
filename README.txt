@@ -1,0 +1,1 @@
+To start the simulation, click on index2.html
